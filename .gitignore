@@ -1,0 +1,25 @@
+# Large generated APK files and local test output
+/dist/
+/tmp/
+/*.apk
+
+# Extracted APK contents and binary analysis artifacts
+/work/assets/
+/work/lib/
+/work/res/
+/work/META-INF/
+/work/analysis/
+/work/signing/
+/work/*.dll
+/work/*.il
+/work/*.res
+/work/*.apk
+/work/AndroidManifest.xml
+/work/classes*.dex
+/work/resources.arsc
+
+# Compiled helper tools and debug symbols
+/work/tools/*.dll
+/work/tools/*.exe
+/work/tools/*.pdb
+
