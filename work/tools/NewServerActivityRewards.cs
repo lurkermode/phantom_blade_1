@@ -463,14 +463,7 @@ namespace YzrLocal
             }
 
             int currencyCount = 0;
-            message.AddMessageReplace(
-                "currencyCount",
-                currencyCount.ToString());
-            message.AddMessageReplace("StackCount", "0");
-            message.AddMessageReplace("EquipCount", "0");
-            message.AddMessageReplace("RuneCount", "0");
-            message.AddMessageReplace("GemCount", "0");
-            message.AddMessageReplace("MatCount", "0");
+            InitializeRewardMessage(message);
 
             for (int i = 0; i < itemIds.Count; i++)
             {
@@ -483,13 +476,20 @@ namespace YzrLocal
                 int rule = rules != null && i < rules.Count
                     ? rules[i]
                     : 0;
-                int amount = LocalGameplay.GetRewardAmount(itemId, rule);
+                bool isCurrency = itemId / 100000 == 5;
+                int amount = isCurrency
+                    ? GetCurrencyRewardAmount(itemId, rule)
+                    : LocalGameplay.GetRewardAmount(itemId, rule);
                 if (amount <= 0)
                 {
                     amount = 1;
                 }
+                Log("Reward amount item=" + itemId +
+                    " rule=" + rule +
+                    " amount=" + amount +
+                    " currency=" + isCurrency);
 
-                if (itemId / 100000 == 5)
+                if (isCurrency)
                 {
                     Currency currency = ItemManager.Instance
                         .GenerateCurrencyByAmount(itemId, amount);
@@ -501,7 +501,7 @@ namespace YzrLocal
                     }
                     message.AddMessageReplace(
                         "currencyType" + currencyCount,
-                        ((int)currency.currencyType).ToString());
+                        currency.prototypeID.ToString());
                     message.AddMessageReplace(
                         "currencyNum" + currencyCount,
                         amount.ToString());
@@ -509,21 +509,161 @@ namespace YzrLocal
                     continue;
                 }
 
+                MessageEventArgs itemMessage = new MessageEventArgs();
                 if (!LocalGameplay.GrantSignInItemDirect(
                         itemId,
                         amount,
                         rule,
-                        message))
+                        itemMessage))
                 {
                     Log("Grant item failed id=" + itemId +
                         " rule=" + rule);
                     return false;
                 }
+                AppendRewardMessage(message, itemMessage);
             }
             message.AddMessageReplace(
                 "currencyCount",
                 currencyCount.ToString());
             return true;
+        }
+
+        private static int GetCurrencyRewardAmount(
+            int itemId,
+            int ruleId)
+        {
+            try
+            {
+                Item item = ItemManager.Instance
+                    .GetItemPrototype(itemId);
+                GenerateRule rule =
+                    ItemManager.Instance.GetGenerateRule(ruleId);
+                if (item == null || rule == null)
+                {
+                    return 1;
+                }
+
+                if (Convert.ToBoolean(
+                        rule.GetValue("RandomCount")))
+                {
+                    int minimum = ReadInt(
+                        rule.GetValue("MinCount"));
+                    int maximum = ReadInt(
+                        rule.GetValue("MaxCount"));
+                    if (maximum < minimum)
+                    {
+                        maximum = minimum;
+                    }
+                    return MathUtility.GetRandomInt(
+                        ruleId,
+                        minimum,
+                        maximum + 1);
+                }
+
+                return Math.Max(
+                    1,
+                    ReadInt(rule.GetValue("Count")));
+            }
+            catch (Exception ex)
+            {
+                Log("Currency amount ERR item=" + itemId +
+                    " rule=" + ruleId + " " + ex);
+                return 1;
+            }
+        }
+
+        private static void InitializeRewardMessage(
+            MessageEventArgs message)
+        {
+            message.AddMessageReplace("currencyCount", "0");
+            message.AddMessageReplace("EquipCount", "0");
+            message.AddMessageReplace("RuneCount", "0");
+            message.AddMessageReplace("GemCount", "0");
+            message.AddMessageReplace("MatCount", "0");
+            message.AddMessageReplace("StackCount", "0");
+        }
+
+        private static void AppendRewardMessage(
+            MessageEventArgs target,
+            MessageEventArgs source)
+        {
+            AppendCategory(
+                target,
+                source,
+                "EquipCount",
+                "EquipUID",
+                null);
+            AppendCategory(
+                target,
+                source,
+                "RuneCount",
+                "RuneID",
+                null);
+            AppendCategory(
+                target,
+                source,
+                "GemCount",
+                "GemID",
+                null);
+            AppendCategory(
+                target,
+                source,
+                "MatCount",
+                "MatID",
+                null);
+            AppendCategory(
+                target,
+                source,
+                "StackCount",
+                "StackID",
+                "StackCount");
+        }
+
+        private static void AppendCategory(
+            MessageEventArgs target,
+            MessageEventArgs source,
+            string countKey,
+            string idPrefix,
+            string amountPrefix)
+        {
+            int sourceCount = ReadInt(source.GetMessage(countKey));
+            if (sourceCount <= 0)
+            {
+                return;
+            }
+
+            int targetOffset = ReadInt(target.GetMessage(countKey));
+            for (int i = 0; i < sourceCount; i++)
+            {
+                string sourceId = source.GetMessage(idPrefix + i);
+                if (string.IsNullOrEmpty(sourceId))
+                {
+                    continue;
+                }
+                target.AddMessageReplace(
+                    idPrefix + (targetOffset + i),
+                    sourceId);
+                if (!string.IsNullOrEmpty(amountPrefix))
+                {
+                    string sourceAmount =
+                        source.GetMessage(amountPrefix + i);
+                    if (!string.IsNullOrEmpty(sourceAmount))
+                    {
+                        target.AddMessageReplace(
+                            amountPrefix + (targetOffset + i),
+                            sourceAmount);
+                    }
+                }
+            }
+            target.AddMessageReplace(
+                countKey,
+                (targetOffset + sourceCount).ToString());
+        }
+
+        private static int ReadInt(string value)
+        {
+            int result;
+            return int.TryParse(value, out result) ? result : 0;
         }
 
         private static bool IsClaimed(string prefix, int pid)
