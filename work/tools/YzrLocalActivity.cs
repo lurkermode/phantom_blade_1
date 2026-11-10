@@ -155,6 +155,70 @@ namespace YzrLocal
             }
         }
 
+        public static void ApplyLevelActivityReward(
+            int sceneID,
+            QuestReward reward)
+        {
+            if (reward == null)
+            {
+                return;
+            }
+
+            int prefix = sceneID / 100;
+            if (prefix == 508)
+            {
+                reward.coins = SaturatingMultiply(reward.coins, 2);
+                Log("Zhaocai reward x2 scene=" + sceneID);
+                return;
+            }
+
+            if (prefix != 515 &&
+                prefix != 512 &&
+                prefix != 511 &&
+                sceneID != 50701 &&
+                sceneID != 50705)
+            {
+                return;
+            }
+
+            DoubleQuestRewardItems(reward);
+            Log("Level activity reward x2 scene=" + sceneID);
+        }
+
+        public static int DoubleDeathFightReward(int amount)
+        {
+            if (amount <= 0)
+            {
+                return amount;
+            }
+            Log("Death fight blood stone x2 base=" + amount);
+            return SaturatingMultiply(amount, 2);
+        }
+
+        public static int DoubleDuelTicketReward(int amount)
+        {
+            if (amount <= 0)
+            {
+                return amount;
+            }
+            Log("Duel ticket x2 base=" + amount);
+            return SaturatingMultiply(amount, 2);
+        }
+
+        public static long DoubleZhaocaiCoinReward(long amount)
+        {
+            if (amount <= 0)
+            {
+                return amount;
+            }
+            if (amount > long.MaxValue / 2)
+            {
+                return long.MaxValue;
+            }
+            Log("Zhaocai coin x2 base=" + amount);
+            return amount * 2;
+        }
+
         public static void ClaimStaminaAndRefresh(
             ActivityStaminaUsedPanel panel,
             int activityId,
@@ -395,6 +459,31 @@ namespace YzrLocal
                 }
             }
             return true;
+        }
+
+        private static void DoubleQuestRewardItems(QuestReward reward)
+        {
+            if (reward.items_general == null ||
+                reward.items_general.Count <= 0)
+            {
+                return;
+            }
+
+            if (reward.amounts_general == null)
+            {
+                reward.amounts_general = new List<int>();
+            }
+            while (reward.amounts_general.Count <
+                   reward.items_general.Count)
+            {
+                reward.amounts_general.Add(1);
+            }
+            for (int i = 0; i < reward.amounts_general.Count; i++)
+            {
+                reward.amounts_general[i] = SaturatingMultiply(
+                    reward.amounts_general[i],
+                    2);
+            }
         }
 
         private static bool IsReached(ActivityInfo info, int rewardIndex)
@@ -683,6 +772,20 @@ namespace YzrLocal
                 return 0;
             }
             return (int)value;
+        }
+
+        private static int SaturatingMultiply(int value, int multiplier)
+        {
+            long result = (long)value * multiplier;
+            if (result > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+            if (result < int.MinValue)
+            {
+                return int.MinValue;
+            }
+            return (int)result;
         }
 
         private static void ShowTip(string text)
