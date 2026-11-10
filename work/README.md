@@ -23,8 +23,14 @@
   - `1-24`：每日离线充值金额，与 `1-23` 一样每日刷新。
 - 新服活动使用独立的 `newActivityButtonObj` 和
   `UINewServerActivityWindow`，不放在旧活动列表中。
-- 新服活动第一阶段已恢复独立按钮和 6 个本地活动卡片，当前仅支持浏览；
-  页面领奖与活动玩法尚未接入。
+- 新服活动恢复独立按钮，并保留 `全服首充`、`幸运转盘`、`VIP好礼`
+  三个每日活动。
+- `全服首充` 的武林盛宴和豪门封赏改为按每日累计充值金额判断，并支持
+  本地领取；普通奖励与 VIP 奖励分别按日记录领取状态。
+- `幸运转盘` 每天恢复 7 次，中奖元宝和剩余次数保存到本地存档。
+- `VIP好礼` 按 VIP 等级购买，每档每天可购买一次，元宝扣除和礼包发放
+  均在本地完成。
+- 新服活动开放时间按当天计算，三项活动均在跨日后刷新。
 
 ## 工具
 
@@ -37,7 +43,11 @@
 - `tools/OfflineActivityPagesFix.cs`：用本地活动表恢复旧活动页面。
 - `tools/OfflineOldActivityFilterFix.cs`：筛选保留的 4 个旧活动。
 - `tools/OfflineNewServerActivityPagesFix.cs`：显示新服活动独立按钮并准备
-  6 个本地活动页面。
+  3 个每日本地活动页面。
+- `tools/OfflineNewServerActivityRewardsPatch.cs`：把全服首充、幸运转盘和
+  VIP好礼接入每日本地状态与奖励结算。
+- `tools/NewServerActivityRewards.cs`：新服活动每日状态、奖励发放、转盘
+  次数和 VIP 礼包购买逻辑。
 - `tools/OfflineActivityRewardsPatch.cs`：把活动进度和领取入口接入本地结算。
 - `tools/YzrLocalActivity.cs`：活动进度、每日重置、奖励发放和防重复领取模块。
 - `tools/apply-store-fix-test.ps1`：覆盖 MuMu 模拟器中已安装的 APK，

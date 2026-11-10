@@ -81,6 +81,16 @@ namespace YzrLocal
             Log("Recharge progress daily=" + daily + " total=" + total);
         }
 
+        public static int GetDailyRechargeAmount()
+        {
+            return GetDailyRechargeProgress();
+        }
+
+        public static void EnsureDailyState()
+        {
+            EnsureRechargeDay();
+        }
+
         public static void RefreshAll()
         {
             try

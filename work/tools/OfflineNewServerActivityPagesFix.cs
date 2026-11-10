@@ -60,7 +60,7 @@ internal static class OfflineNewServerActivityPagesFix
             }
 
             Console.WriteLine("Enabled the separate new-server activity button.");
-            Console.WriteLine("Prepared all 6 new-server activities for offline viewing.");
+            Console.WriteLine("Prepared 3 daily new-server activities for offline viewing.");
             return 0;
         }
         catch (Exception ex)
@@ -336,7 +336,7 @@ internal static class OfflineNewServerActivityPagesFix
             Instruction.Create(OpCodes.Ldloc, infoList),
             Instruction.Create(OpCodes.Newobj, infoCtor),
             Instruction.Create(OpCodes.Dup),
-            Instruction.Create(OpCodes.Ldc_I4, 200000),
+            Instruction.Create(OpCodes.Ldc_I4, 200001),
             Instruction.Create(OpCodes.Ldloc, index),
             Instruction.Create(OpCodes.Add),
             Instruction.Create(OpCodes.Ldc_I4, ActivityBeginSeconds),
@@ -351,7 +351,7 @@ internal static class OfflineNewServerActivityPagesFix
         il.Append(check);
         Emit(il,
             Instruction.Create(OpCodes.Ldloc, index),
-            Instruction.Create(OpCodes.Ldc_I4_6),
+            Instruction.Create(OpCodes.Ldc_I4_3),
             Instruction.Create(OpCodes.Blt, body),
             Instruction.Create(OpCodes.Ret));
         return method;
