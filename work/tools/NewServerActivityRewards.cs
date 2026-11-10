@@ -476,20 +476,13 @@ namespace YzrLocal
                 int rule = rules != null && i < rules.Count
                     ? rules[i]
                     : 0;
-                bool isCurrency = itemId / 100000 == 5;
-                int amount = isCurrency
-                    ? GetCurrencyRewardAmount(itemId, rule)
-                    : LocalGameplay.GetRewardAmount(itemId, rule);
+                int amount = LocalGameplay.GetRewardAmount(itemId, rule);
                 if (amount <= 0)
                 {
                     amount = 1;
                 }
-                Log("Reward amount item=" + itemId +
-                    " rule=" + rule +
-                    " amount=" + amount +
-                    " currency=" + isCurrency);
 
-                if (isCurrency)
+                if (itemId / 100000 == 5)
                 {
                     Currency currency = ItemManager.Instance
                         .GenerateCurrencyByAmount(itemId, amount);
@@ -526,50 +519,6 @@ namespace YzrLocal
                 "currencyCount",
                 currencyCount.ToString());
             return true;
-        }
-
-        private static int GetCurrencyRewardAmount(
-            int itemId,
-            int ruleId)
-        {
-            try
-            {
-                Item item = ItemManager.Instance
-                    .GetItemPrototype(itemId);
-                GenerateRule rule =
-                    ItemManager.Instance.GetGenerateRule(ruleId);
-                if (item == null || rule == null)
-                {
-                    return 1;
-                }
-
-                if (Convert.ToBoolean(
-                        rule.GetValue("RandomCount")))
-                {
-                    int minimum = ReadInt(
-                        rule.GetValue("MinCount"));
-                    int maximum = ReadInt(
-                        rule.GetValue("MaxCount"));
-                    if (maximum < minimum)
-                    {
-                        maximum = minimum;
-                    }
-                    return MathUtility.GetRandomInt(
-                        ruleId,
-                        minimum,
-                        maximum + 1);
-                }
-
-                return Math.Max(
-                    1,
-                    ReadInt(rule.GetValue("Count")));
-            }
-            catch (Exception ex)
-            {
-                Log("Currency amount ERR item=" + itemId +
-                    " rule=" + ruleId + " " + ex);
-                return 1;
-            }
         }
 
         private static void InitializeRewardMessage(
