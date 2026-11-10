@@ -176,7 +176,9 @@ internal static class OfflineNewServerActivityPagesFix
         var firstChargeCtor = firstCharge.Methods.Single(
             method => method.IsConstructor &&
                       method.Parameters.Count == 0);
-        if (!firstChargeCtor.Body.Instructions.Any(instruction =>
+        if (!firstChargePrototype.IsLiteral &&
+            !firstChargePrototype.HasConstant &&
+            !firstChargeCtor.Body.Instructions.Any(instruction =>
                 instruction.OpCode ==
                 (firstChargePrototype.IsStatic
                     ? OpCodes.Stsfld
