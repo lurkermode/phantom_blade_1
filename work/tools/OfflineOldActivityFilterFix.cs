@@ -31,7 +31,7 @@ internal static class OfflineOldActivityFilterFix
                 assembly.Write(args[1]);
             }
 
-            Console.WriteLine("Filtered old activity catalog to 12 entries.");
+            Console.WriteLine("Filtered old activity catalog to 4 entries.");
             return 0;
         }
         catch (Exception ex)
@@ -67,19 +67,10 @@ internal static class OfflineOldActivityFilterFix
         method.Body.MaxStackSize = 2;
         controller.Methods.Add(method);
 
-        var secondRange = Instruction.Create(OpCodes.Nop);
         var selected = Instruction.Create(OpCodes.Nop);
         var rejected = Instruction.Create(OpCodes.Nop);
         var il = method.Body.GetILProcessor();
 
-        il.Append(Instruction.Create(OpCodes.Ldarg_0));
-        il.Append(Instruction.Create(OpCodes.Ldc_I4, 11834));
-        il.Append(Instruction.Create(OpCodes.Blt, secondRange));
-        il.Append(Instruction.Create(OpCodes.Ldarg_0));
-        il.Append(Instruction.Create(OpCodes.Ldc_I4, 11841));
-        il.Append(Instruction.Create(OpCodes.Ble, selected));
-
-        il.Append(secondRange);
         il.Append(Instruction.Create(OpCodes.Ldarg_0));
         il.Append(Instruction.Create(OpCodes.Ldc_I4, 11853));
         il.Append(Instruction.Create(OpCodes.Blt, rejected));
