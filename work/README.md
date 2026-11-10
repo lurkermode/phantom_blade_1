@@ -21,6 +21,10 @@
   - `1-22`：元宝消费。
   - `1-23`：每日离线充值金额。
   - `1-24`：每日离线充值金额，与 `1-23` 一样每日刷新。
+- 新服活动使用独立的 `newActivityButtonObj` 和
+  `UINewServerActivityWindow`，不放在旧活动列表中。
+- 新服活动第一阶段已恢复独立按钮和 6 个本地活动卡片，当前仅支持浏览；
+  页面领奖与活动玩法尚未接入。
 
 ## 工具
 
@@ -31,7 +35,9 @@
 - `tools/UnlimitedResignFix.cs`：解除签到补签次数限制。
 - `tools/DuelFactorOneFix.cs`：增加 `1x` 论剑人机；调整倍率排序和滚动区域。
 - `tools/OfflineActivityPagesFix.cs`：用本地活动表恢复旧活动页面。
-- `tools/OfflineOldActivityFilterFix.cs`：筛选保留的 12 个旧活动。
+- `tools/OfflineOldActivityFilterFix.cs`：筛选保留的 4 个旧活动。
+- `tools/OfflineNewServerActivityPagesFix.cs`：显示新服活动独立按钮并准备
+  6 个本地活动页面。
 - `tools/OfflineActivityRewardsPatch.cs`：把活动进度和领取入口接入本地结算。
 - `tools/YzrLocalActivity.cs`：活动进度、每日重置、奖励发放和防重复领取模块。
 - `tools/apply-store-fix-test.ps1`：覆盖 MuMu 模拟器中已安装的 APK，
