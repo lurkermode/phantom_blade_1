@@ -43,6 +43,7 @@ internal static class SignInDailyCycleFix
 
                 PatchDailySessionKey(gameplay);
                 PatchRewardTableSelection(gameplay, cycleMonth);
+                PatchNullRewardSanitizer(gameplay);
 
                 assembly.Write(args[1]);
             }
@@ -156,6 +157,45 @@ internal static class SignInDailyCycleFix
 
         throw new InvalidOperationException(
             "DateTime.Now.Month was not found in SyncSignInState.");
+    }
+
+    private static void PatchNullRewardSanitizer(TypeDefinition gameplay)
+    {
+        var sanitize = gameplay.Methods.SingleOrDefault(
+            method =>
+                method.Name == "SanitizeFinishRewardArgs" &&
+                method.IsStatic &&
+                method.Parameters.Count == 3);
+        if (sanitize == null || !sanitize.HasBody ||
+            sanitize.Body.Instructions.Count == 0)
+        {
+            Console.WriteLine(
+                "No finish-reward sanitizer is present; no null guard needed.");
+            return;
+        }
+
+        var first = sanitize.Body.Instructions[0];
+        if (first.OpCode == OpCodes.Ldarg_0 &&
+            first.Next != null &&
+            first.Next.OpCode == OpCodes.Brtrue_S)
+        {
+            Console.WriteLine(
+                "Finish-reward sanitizer null guard is already present.");
+            return;
+        }
+
+        var il = sanitize.Body.GetILProcessor();
+        var loadItems = Instruction.Create(OpCodes.Ldarg_0);
+        var skip = Instruction.Create(OpCodes.Brtrue_S, first);
+        var ret = Instruction.Create(OpCodes.Ret);
+        il.InsertBefore(first, loadItems);
+        il.InsertAfter(loadItems, skip);
+        il.InsertAfter(skip, ret);
+        sanitize.Body.MaxStackSize = Math.Max(
+            sanitize.Body.MaxStackSize,
+            2);
+        Console.WriteLine(
+            "Allowed sign-in currency rewards to use empty reward lists.");
     }
 
     private static MethodDefinition AddCycleMonthMethod(
