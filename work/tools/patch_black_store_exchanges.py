@@ -41,6 +41,9 @@ FIVE_STAR_FRAGMENT_IDS = {
 }
 
 SIX_STAR_FRAGMENT_IDS = {
+    920046,
+    920047,
+    920048,
     920049,
     920050,
     920051,
@@ -52,11 +55,12 @@ SIX_STAR_FRAGMENT_IDS = {
     920061,
     920062,
     920063,
+    920065,
     920066,
     920067,
 }
 
-ADD_FRAGMENTS = (
+ONE_POUCH_ADD_FRAGMENTS = (
     (920042, "绝世之机关术"),
     (920043, "天岭护体"),
     (920039, "花钱如流水！"),
@@ -66,12 +70,20 @@ ADD_FRAGMENTS = (
     (920045, "千手机神"),
 )
 
+TWO_POUCH_ADD_FRAGMENTS = (
+    (920046, "暗魔之王"),
+    (920048, "风云骤合"),
+    (920047, "龙家霸业"),
+    (920065, "沉思者之暗语"),
+)
+
 TWO_POUCH_FRAGMENTS = {
     920054,
     920057,
     920050,
     920051,
     920049,
+    920063,
 }
 
 
@@ -140,80 +152,66 @@ def patch_store(tree: dict) -> None:
         item["matPIDList"] = [GRANNY_POUCH_ID]
         item["matCountList"] = [2]
 
-    for pid, heart_name in ADD_FRAGMENTS:
+    def ensure_fragment(pid: int, heart_name: str, amount: int) -> None:
         item = by_pid.get(pid)
-        if item is not None:
-            item["matPIDList"] = [GRANNY_POUCH_ID]
-            item["matCountList"] = [1]
-            continue
+        if item is None:
+            next_index = NEW_INDEX_START
+            while next_index in used_indexes:
+                next_index += 1
+            used_indexes.add(next_index)
+            item = {
+                "index": next_index,
+                "desc": f"铁马互市兑换{heart_name}残页",
+                "itemPID": pid,
+                "itemRule": 12010,
+                "matPIDList": [GRANNY_POUCH_ID],
+                "matCountList": [amount],
+                "startTime": "00:00:00",
+                "endTime": "23:59:59",
+                "exchangeCount": NEW_EXCHANGE_LIMIT,
+            }
+            items.append(item)
+            by_pid[pid] = item
+            return
+        item["itemRule"] = 12010
+        item["matPIDList"] = [GRANNY_POUCH_ID]
+        item["matCountList"] = [amount]
 
-        next_index = NEW_INDEX_START
-        while next_index in used_indexes:
-            next_index += 1
-        used_indexes.add(next_index)
-        item = {
-            "index": next_index,
-            "desc": f"铁马互市兑换{heart_name}残页",
-            "itemPID": pid,
-            "itemRule": 12010,
-            "matPIDList": [GRANNY_POUCH_ID],
-            "matCountList": [1],
-            "startTime": "00:00:00",
-            "endTime": "23:59:59",
-            "exchangeCount": NEW_EXCHANGE_LIMIT,
-        }
-        items.append(item)
-        by_pid[pid] = item
+    for pid, heart_name in ONE_POUCH_ADD_FRAGMENTS:
+        ensure_fragment(pid, heart_name, 1)
+    for pid, heart_name in TWO_POUCH_ADD_FRAGMENTS:
+        ensure_fragment(pid, heart_name, 2)
 
     for item in items:
         if item["itemPID"] not in TOP_DIRECT_ITEMS:
             item["exchangeCount"] = NEW_EXCHANGE_LIMIT
 
-    unknown = sorted(
-        set(by_pid) - set(TOP_DIRECT_ITEMS) -
-        FIVE_STAR_FRAGMENT_IDS - SIX_STAR_FRAGMENT_IDS
+    material_key = lambda item: (
+        tuple(item["matPIDList"]),
+        tuple(item["matCountList"]),
+        item["index"],
     )
-    rank = {
-        pid: index for index, pid in enumerate(TOP_DIRECT_ITEMS)
-    }
-    rank.update(
-        {
-            pid: len(TOP_DIRECT_ITEMS) + index
-            for index, pid in enumerate(sorted(FIVE_STAR_FRAGMENT_IDS))
-        }
-    )
-    rank.update(
-        {
-            pid: len(TOP_DIRECT_ITEMS) +
-                len(FIVE_STAR_FRAGMENT_IDS) + index
-            for index, pid in enumerate(sorted(SIX_STAR_FRAGMENT_IDS))
-        }
-    )
-    other_rank = (
-        len(TOP_DIRECT_ITEMS) +
-        len(FIVE_STAR_FRAGMENT_IDS) +
-        len(SIX_STAR_FRAGMENT_IDS)
-    )
-    for pid in unknown:
-        rank[pid] = other_rank
+    reordered = [by_pid[pid] for pid in TOP_DIRECT_ITEMS]
+    for star_ids in (FIVE_STAR_FRAGMENT_IDS, SIX_STAR_FRAGMENT_IDS):
+        group = [item for item in items if item["itemPID"] in star_ids]
+        reordered.extend(sorted(group, key=material_key))
 
-    indexed = list(enumerate(items))
-    items[:] = [
-        item
-        for _, item in sorted(
-            indexed,
-            key=lambda pair: (
-                rank[pair[1]["itemPID"]],
-                pair[0],
-            ),
-        )
-    ]
+    known_ids = (
+        set(TOP_DIRECT_ITEMS) |
+        FIVE_STAR_FRAGMENT_IDS |
+        SIX_STAR_FRAGMENT_IDS
+    )
+    extras = [item for item in items if item["itemPID"] not in known_ids]
+    reordered.extend(sorted(extras, key=material_key))
+    if len(reordered) != len(items):
+        raise ValueError("Unexpected Black Store item count during sorting")
+    items[:] = reordered
 
 
 def verify_store(tree: dict) -> None:
     items = tree["blackStoreItemList"]
     by_pid = {item["itemPID"]: item for item in items}
-    for pid, _ in ADD_FRAGMENTS:
+    for pid, _ in ONE_POUCH_ADD_FRAGMENTS:
         item = by_pid.get(pid)
         if item is None:
             raise ValueError(f"Added fragment missing after save: {pid}")
@@ -221,6 +219,16 @@ def verify_store(tree: dict) -> None:
             raise ValueError(f"Unexpected added cost for {pid}")
         if item["matCountList"] != [1]:
             raise ValueError(f"Unexpected added amount for {pid}")
+    for pid, _ in TWO_POUCH_ADD_FRAGMENTS:
+        item = by_pid.get(pid)
+        if item is None:
+            raise ValueError(f"Added fragment missing after save: {pid}")
+        if item["matPIDList"] != [GRANNY_POUCH_ID]:
+            raise ValueError(f"Unexpected added cost for {pid}")
+        if item["matCountList"] != [2]:
+            raise ValueError(f"Unexpected added amount for {pid}")
+        if item["itemRule"] != 12010:
+            raise ValueError(f"Unexpected added output rule for {pid}")
     for pid in TWO_POUCH_FRAGMENTS:
         item = by_pid.get(pid)
         if item is None:
@@ -249,24 +257,27 @@ def verify_store(tree: dict) -> None:
             f"Unexpected top Black Store order: {ordered_pids[:2]}"
         )
 
-    first_five = min(
-        ordered_pids.index(pid) for pid in FIVE_STAR_FRAGMENT_IDS
+    material_key = lambda item: (
+        tuple(item["matPIDList"]),
+        tuple(item["matCountList"]),
+        item["index"],
     )
-    last_five = max(
-        ordered_pids.index(pid) for pid in FIVE_STAR_FRAGMENT_IDS
-    )
-    first_six = min(
-        ordered_pids.index(pid) for pid in SIX_STAR_FRAGMENT_IDS
-    )
-    last_six = max(
-        ordered_pids.index(pid) for pid in SIX_STAR_FRAGMENT_IDS
-    )
-    if not (
-        len(TOP_DIRECT_ITEMS) <= first_five <= last_five < first_six
-        <= last_six
-    ):
+    for star_ids in (FIVE_STAR_FRAGMENT_IDS, SIX_STAR_FRAGMENT_IDS):
+        actual = [
+            item for item in items if item["itemPID"] in star_ids
+        ]
+        if actual != sorted(actual, key=material_key):
+            raise ValueError(
+                "Black Store fragments are not ordered by exchange material."
+            )
+
+    first_five = min(ordered_pids.index(pid) for pid in FIVE_STAR_FRAGMENT_IDS)
+    last_five = max(ordered_pids.index(pid) for pid in FIVE_STAR_FRAGMENT_IDS)
+    first_six = min(ordered_pids.index(pid) for pid in SIX_STAR_FRAGMENT_IDS)
+    last_six = max(ordered_pids.index(pid) for pid in SIX_STAR_FRAGMENT_IDS)
+    if not last_five < first_six or last_six >= len(ordered_pids) - 1:
         raise ValueError(
-            "Black Store heart fragments are not ordered 5-star then 6-star."
+            "Black Store fragments are not ordered 5-star then 6-star."
         )
 
 
@@ -327,8 +338,8 @@ def main() -> None:
         args.managed_dir,
     )
     print(
-        "Patched 7 new one-pouch fragments and "
-        "5 existing two-pouch fragments."
+        "Patched 7 one-pouch additions, 4 two-pouch additions, "
+        "and 6 existing two-pouch exchanges."
     )
 
 
