@@ -5,10 +5,10 @@ import zipfile
 
 
 apk_path = pathlib.Path(
-    "dist/影之刃1_64位修复版_普通关卡停止装备掉落_v58.apk"
+    "dist/影之刃1_64位修复版_普通关卡停止装备掉落_v60.apk"
 )
 assembly_path = pathlib.Path(
-    "tmp/assembly-normal-no-equipment-v58.dll"
+    "tmp/assembly-normal-no-equipment-v60.dll"
 )
 assembly_entry = "assets/bin/Data/Managed/Assembly-CSharp.dll"
 

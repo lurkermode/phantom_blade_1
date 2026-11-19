@@ -9,10 +9,10 @@ source_apk = pathlib.Path(
     "dist/影之刃1_64位修复版_密令次数调整_v57.apk"
 )
 output_apk = pathlib.Path(
-    "dist/影之刃1_64位修复版_普通关卡停止装备掉落_v58-unsigned.apk"
+    "dist/影之刃1_64位修复版_普通关卡停止装备掉落_v60-unsigned.apk"
 )
 assembly = pathlib.Path(
-    "tmp/assembly-normal-no-equipment-v58.dll"
+    "tmp/assembly-normal-no-equipment-v60.dll"
 )
 
 replacements = {

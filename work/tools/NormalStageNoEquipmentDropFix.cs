@@ -5,8 +5,7 @@ using Mono.Cecil.Cil;
 
 internal static class NormalStageNoEquipmentDropFix
 {
-    private const string RuleTypeName = "YzrLocal.NormalStageDropRules";
-    private const string RuleMethodName = "ShouldSkipEquipmentDrop";
+    private const string FilterMethodName = "FilterNormalEquipmentRewards";
 
     private static int Main(string[] args)
     {
@@ -22,44 +21,45 @@ internal static class NormalStageNoEquipmentDropFix
             using (var assembly = AssemblyDefinition.ReadAssembly(args[0]))
             {
                 var module = assembly.MainModule;
-                var combat = RequiredType(module, "CombatDataManager");
-                var finish = combat.Methods.SingleOrDefault(method =>
-                    method.Name == "FinishVirtualCombat" &&
-                    method.HasBody &&
-                    method.Parameters.Count == 2);
-                if (finish == null)
-                {
-                    throw new InvalidOperationException(
-                        "CombatDataManager.FinishVirtualCombat was not found.");
-                }
-
-                var rules = module.GetType(RuleTypeName);
-                if (rules == null)
-                {
-                    rules = AddRulesType(module);
-                }
-
-                var ruleMethod = rules.Methods.SingleOrDefault(method =>
-                    method.Name == RuleMethodName &&
+                var gameplay = RequiredType(module, "YzrLocal.LocalGameplay");
+                var filter = gameplay.Methods.SingleOrDefault(method =>
+                    method.Name == FilterMethodName &&
                     method.IsStatic &&
-                    method.ReturnType.MetadataType == MetadataType.Boolean &&
-                    method.Parameters.Count == 2);
-                if (ruleMethod == null)
+                    method.Parameters.Count == 3);
+                if (filter == null)
                 {
-                    throw new InvalidOperationException(
-                        RuleMethodName + " was not found.");
+                    filter = AddFilterMethod(module, gameplay);
                 }
 
-                if (!CallsRuleMethod(finish, ruleMethod))
-                {
-                    InjectRuleCall(finish, ruleMethod);
-                }
+                var manualFinish = RequiredMethod(
+                    gameplay,
+                    "OnLevelFinishLocal");
+                var sweepFinish = RequiredMethod(
+                    gameplay,
+                    "GrantCombatReward");
+
+                PatchCallSite(
+                    gameplay,
+                    manualFinish,
+                    filter,
+                    true,
+                    1,
+                    5,
+                    6);
+                PatchCallSite(
+                    gameplay,
+                    sweepFinish,
+                    filter,
+                    false,
+                    0,
+                    12,
+                    13);
 
                 assembly.Write(args[1]);
                 Console.WriteLine(
-                    "Patched normal campaign settlement: equipment drops are "
-                    + "discarded after their normal roll; all non-equipment "
-                    + "rewards remain unchanged.");
+                    "Patched normal campaign reward lists: equipment is "
+                    + "removed before BuildRewardArgs; experience books, "
+                    + "breakthrough materials, and all other rewards remain.");
             }
             return 0;
         }
@@ -72,18 +72,10 @@ internal static class NormalStageNoEquipmentDropFix
         }
     }
 
-    private static TypeDefinition AddRulesType(ModuleDefinition module)
+    private static MethodDefinition AddFilterMethod(
+        ModuleDefinition module,
+        TypeDefinition gameplay)
     {
-        var rules = new TypeDefinition(
-            "YzrLocal",
-            "NormalStageDropRules",
-            TypeAttributes.Public |
-            TypeAttributes.Abstract |
-            TypeAttributes.Sealed |
-            TypeAttributes.BeforeFieldInit,
-            module.TypeSystem.Object);
-        module.Types.Add(rules);
-
         var levelManager = RequiredType(module, "LevelManager");
         var specialData = RequiredType(module, "SpecialSceneData");
         var itemManager = RequiredType(module, "ItemManager");
@@ -100,9 +92,7 @@ internal static class NormalStageNoEquipmentDropFix
         var getSpecialScene = specialData.Methods.Single(method =>
             method.Name == "GetSpecialSceneBySceneIDWithoutCondiction" &&
             !method.IsStatic &&
-            method.Parameters.Count == 1 &&
-            method.Parameters[0].ParameterType.MetadataType ==
-                MetadataType.Int32);
+            method.Parameters.Count == 1);
         var getItemManager = itemManager.Methods.Single(method =>
             method.Name == "get_Instance" &&
             method.IsStatic &&
@@ -110,54 +100,82 @@ internal static class NormalStageNoEquipmentDropFix
         var getPrototype = itemManager.Methods.Single(method =>
             method.Name == "GetItemPrototype" &&
             !method.IsStatic &&
-            method.Parameters.Count == 1 &&
-            method.Parameters[0].ParameterType.MetadataType ==
-                MetadataType.Int32);
+            method.Parameters.Count == 1);
         var itemType = item.Fields.Single(field =>
             field.Name == "itemType");
 
-        var shouldSkip = new MethodDefinition(
-            RuleMethodName,
-            MethodAttributes.Public |
+        var listType = module.ImportReference(
+            typeof(System.Collections.Generic.List<int>));
+        var getCount = module.ImportReference(
+            typeof(System.Collections.Generic.List<int>)
+                .GetProperty("Count")
+                .GetGetMethod());
+        var getItem = module.ImportReference(
+            typeof(System.Collections.Generic.List<int>)
+                .GetProperty("Item")
+                .GetGetMethod());
+        var removeAt = module.ImportReference(
+            typeof(System.Collections.Generic.List<int>)
+                .GetMethod(
+                    "RemoveAt",
+                    new[] { typeof(int) }));
+
+        var filter = new MethodDefinition(
+            FilterMethodName,
+            MethodAttributes.Private |
             MethodAttributes.Static |
             MethodAttributes.HideBySig,
-            module.TypeSystem.Boolean);
-        shouldSkip.Parameters.Add(new ParameterDefinition(
+            module.TypeSystem.Void);
+        filter.Parameters.Add(new ParameterDefinition(
             "sceneID",
             ParameterAttributes.None,
             module.TypeSystem.Int32));
-        shouldSkip.Parameters.Add(new ParameterDefinition(
-            "itemID",
+        filter.Parameters.Add(new ParameterDefinition(
+            "items",
             ParameterAttributes.None,
-            module.TypeSystem.Int32));
-        rules.Methods.Add(shouldSkip);
+            listType));
+        filter.Parameters.Add(new ParameterDefinition(
+            "amounts",
+            ParameterAttributes.None,
+            listType));
+        gameplay.Methods.Add(filter);
 
         var managerLocal = new VariableDefinition(levelManager);
         var specialDataLocal = new VariableDefinition(specialData);
+        var indexLocal = new VariableDefinition(module.TypeSystem.Int32);
+        var prototypeIDLocal = new VariableDefinition(
+            module.TypeSystem.Int32);
         var itemLocal = new VariableDefinition(item);
-        shouldSkip.Body.Variables.Add(managerLocal);
-        shouldSkip.Body.Variables.Add(specialDataLocal);
-        shouldSkip.Body.Variables.Add(itemLocal);
-        shouldSkip.Body.InitLocals = true;
-        shouldSkip.Body.MaxStackSize = 3;
+        filter.Body.Variables.Add(managerLocal);
+        filter.Body.Variables.Add(specialDataLocal);
+        filter.Body.Variables.Add(indexLocal);
+        filter.Body.Variables.Add(prototypeIDLocal);
+        filter.Body.Variables.Add(itemLocal);
+        filter.Body.InitLocals = true;
+        filter.Body.MaxStackSize = 3;
 
-        var il = shouldSkip.Body.GetILProcessor();
+        var il = filter.Body.GetILProcessor();
         var checkSpecial = Instruction.Create(OpCodes.Nop);
         var checkItem = Instruction.Create(OpCodes.Nop);
-        var returnFalse = Instruction.Create(OpCodes.Nop);
+        var loopCondition = Instruction.Create(OpCodes.Nop);
+        var loopBody = Instruction.Create(OpCodes.Nop);
+        var nextItem = Instruction.Create(OpCodes.Nop);
+        var removeAmount = Instruction.Create(OpCodes.Nop);
+        var amountRemoved = Instruction.Create(OpCodes.Nop);
+        var returnMethod = Instruction.Create(OpCodes.Ret);
 
-        // Training/PVP scene IDs are not campaign levels.
+        // Training/PVP scenes are not ordinary campaign levels.
         il.Append(Instruction.Create(OpCodes.Ldarg_0));
         il.Append(Instruction.Create(OpCodes.Ldc_I4, 10000));
         il.Append(Instruction.Create(OpCodes.Blt, checkItem));
         il.Append(Instruction.Create(OpCodes.Ldarg_0));
         il.Append(Instruction.Create(OpCodes.Ldc_I4, 10100));
-        il.Append(Instruction.Create(OpCodes.Blt, returnFalse));
+        il.Append(Instruction.Create(OpCodes.Blt, returnMethod));
 
-        // Special scenes keep their original equipment pools.
+        // Special scenes retain their native equipment pools.
         il.Append(Instruction.Create(OpCodes.Ldarg_0));
         il.Append(Instruction.Create(OpCodes.Ldc_I4_0));
-        il.Append(Instruction.Create(OpCodes.Ble, returnFalse));
+        il.Append(Instruction.Create(OpCodes.Ble, returnMethod));
         il.Append(Instruction.Create(OpCodes.Call, getLevelManager));
         il.Append(Instruction.Create(OpCodes.Stloc, managerLocal));
         il.Append(Instruction.Create(OpCodes.Ldloc, managerLocal));
@@ -173,32 +191,86 @@ internal static class NormalStageNoEquipmentDropFix
         il.Append(Instruction.Create(OpCodes.Ldloc, specialDataLocal));
         il.Append(Instruction.Create(OpCodes.Ldarg_0));
         il.Append(Instruction.Create(OpCodes.Callvirt, getSpecialScene));
-        il.Append(Instruction.Create(OpCodes.Brtrue, returnFalse));
+        il.Append(Instruction.Create(OpCodes.Brtrue, returnMethod));
 
         il.Append(checkItem);
-        il.Append(Instruction.Create(OpCodes.Call, getItemManager));
         il.Append(Instruction.Create(OpCodes.Ldarg_1));
+        il.Append(Instruction.Create(OpCodes.Brfalse, returnMethod));
+        il.Append(Instruction.Create(OpCodes.Ldarg_1));
+        il.Append(Instruction.Create(OpCodes.Callvirt, getCount));
+        il.Append(Instruction.Create(OpCodes.Ldc_I4_1));
+        il.Append(Instruction.Create(OpCodes.Sub));
+        il.Append(Instruction.Create(OpCodes.Stloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Br, loopCondition));
+
+        il.Append(loopBody);
+        il.Append(Instruction.Create(OpCodes.Ldarg_1));
+        il.Append(Instruction.Create(OpCodes.Ldloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Callvirt, getItem));
+        il.Append(Instruction.Create(OpCodes.Stloc, prototypeIDLocal));
+        il.Append(Instruction.Create(OpCodes.Ldloc, prototypeIDLocal));
+        il.Append(Instruction.Create(OpCodes.Ldc_I4_0));
+        il.Append(Instruction.Create(OpCodes.Ble, nextItem));
+        il.Append(Instruction.Create(OpCodes.Call, getItemManager));
+        il.Append(Instruction.Create(OpCodes.Ldloc, prototypeIDLocal));
         il.Append(Instruction.Create(OpCodes.Callvirt, getPrototype));
         il.Append(Instruction.Create(OpCodes.Stloc, itemLocal));
         il.Append(Instruction.Create(OpCodes.Ldloc, itemLocal));
-        il.Append(Instruction.Create(OpCodes.Brfalse, returnFalse));
+        il.Append(Instruction.Create(OpCodes.Brfalse, nextItem));
         il.Append(Instruction.Create(OpCodes.Ldloc, itemLocal));
         il.Append(Instruction.Create(OpCodes.Ldfld, itemType));
         il.Append(Instruction.Create(OpCodes.Ldc_I4_2));
-        il.Append(Instruction.Create(OpCodes.Ceq));
-        il.Append(Instruction.Create(OpCodes.Ret));
+        il.Append(Instruction.Create(OpCodes.Bne_Un, nextItem));
 
-        il.Append(returnFalse);
-        il.Append(Instruction.Create(OpCodes.Ldc_I4_0));
-        il.Append(Instruction.Create(OpCodes.Ret));
-        return rules;
+        il.Append(Instruction.Create(OpCodes.Ldarg_1));
+        il.Append(Instruction.Create(OpCodes.Ldloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Callvirt, removeAt));
+        il.Append(Instruction.Create(OpCodes.Ldarg_2));
+        il.Append(Instruction.Create(OpCodes.Brfalse, amountRemoved));
+        il.Append(Instruction.Create(OpCodes.Ldloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Ldarg_2));
+        il.Append(Instruction.Create(OpCodes.Callvirt, getCount));
+        il.Append(Instruction.Create(OpCodes.Blt, removeAmount));
+        il.Append(Instruction.Create(OpCodes.Br, amountRemoved));
+
+        il.Append(removeAmount);
+        il.Append(Instruction.Create(OpCodes.Ldarg_2));
+        il.Append(Instruction.Create(OpCodes.Ldloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Callvirt, removeAt));
+
+        il.Append(amountRemoved);
+        il.Append(nextItem);
+        il.Append(Instruction.Create(OpCodes.Ldloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Ldc_I4_1));
+        il.Append(Instruction.Create(OpCodes.Sub));
+        il.Append(Instruction.Create(OpCodes.Stloc, indexLocal));
+
+        il.Append(loopCondition);
+        il.Append(Instruction.Create(OpCodes.Ldloc, indexLocal));
+        il.Append(Instruction.Create(OpCodes.Ldc_I4_M1));
+        il.Append(Instruction.Create(OpCodes.Bgt, loopBody));
+        il.Append(returnMethod);
+
+        return filter;
     }
 
-    private static bool CallsRuleMethod(
-        MethodDefinition finish,
-        MethodDefinition ruleMethod)
+    private static void PatchCallSite(
+        TypeDefinition gameplay,
+        MethodDefinition method,
+        MethodDefinition filter,
+        bool sceneIsLocal,
+        int sceneIndex,
+        int itemsIndex,
+        int amountsIndex)
     {
-        return finish.Body.Instructions.Any(instruction =>
+        if (CallsFilter(method, filter))
+        {
+            return;
+        }
+
+        var getClassReward = gameplay.Methods.Single(candidate =>
+            candidate.Name == "GetClassReward");
+        var call = method.Body.Instructions.SingleOrDefault(instruction =>
         {
             if (instruction.OpCode != OpCodes.Call)
             {
@@ -206,78 +278,61 @@ internal static class NormalStageNoEquipmentDropFix
             }
             var reference = instruction.Operand as MethodReference;
             return reference != null &&
-                reference.Name == RuleMethodName &&
-                reference.DeclaringType.FullName == RuleTypeName;
+                reference.Name == "GetClassReward";
+        });
+        if (call == null)
+        {
+            throw new InvalidOperationException(
+                "GetClassReward call was not found in " + method.Name);
+        }
+
+        var scene = sceneIsLocal
+            ? Instruction.Create(
+                OpCodes.Ldloc,
+                method.Body.Variables[sceneIndex])
+            : Instruction.Create(OpCodes.Ldarg_0);
+        var il = method.Body.GetILProcessor();
+        var anchor = call.Next;
+        il.InsertBefore(anchor, scene);
+        il.InsertBefore(anchor, Instruction.Create(
+            OpCodes.Ldloc,
+            method.Body.Variables[itemsIndex]));
+        il.InsertBefore(anchor, Instruction.Create(
+            OpCodes.Ldloc,
+            method.Body.Variables[amountsIndex]));
+        il.InsertBefore(anchor, Instruction.Create(
+            OpCodes.Call,
+            filter));
+        method.Body.MaxStackSize = Math.Max(
+            method.Body.MaxStackSize,
+            3);
+    }
+
+    private static bool CallsFilter(
+        MethodDefinition method,
+        MethodDefinition filter)
+    {
+        return method.Body.Instructions.Any(instruction =>
+        {
+            var reference = instruction.Operand as MethodReference;
+            return instruction.OpCode == OpCodes.Call &&
+                reference != null &&
+                reference.Name == FilterMethodName;
         });
     }
 
-    private static void InjectRuleCall(
-        MethodDefinition finish,
-        MethodDefinition ruleMethod)
+    private static MethodDefinition RequiredMethod(
+        TypeDefinition type,
+        string name)
     {
-        var addItem = finish.Body.Instructions.FirstOrDefault(instruction =>
-        {
-            var reference = instruction.Operand as MethodReference;
-            var declaringType = reference == null
-                ? null
-                : reference.DeclaringType as GenericInstanceType;
-            var previous = instruction.Previous;
-            return instruction.OpCode == OpCodes.Callvirt &&
-                reference != null &&
-                reference.Name == "Add" &&
-                declaringType != null &&
-                declaringType.ElementType.FullName ==
-                    "System.Collections.Generic.List`1" &&
-                declaringType.GenericArguments.Count == 1 &&
-                declaringType.GenericArguments[0].MetadataType ==
-                    MetadataType.Int32 &&
-                previous != null &&
-                (previous.OpCode == OpCodes.Ldloc_S ||
-                 previous.OpCode == OpCodes.Ldloc);
-        });
-        if (addItem == null)
+        var method = type.Methods.SingleOrDefault(candidate =>
+            candidate.Name == name && candidate.HasBody);
+        if (method == null)
         {
             throw new InvalidOperationException(
-                "The item-list Add call was not found.");
+                type.FullName + "." + name + " was not found.");
         }
-
-        var itemLoad = addItem.Previous;
-        var listLoad = itemLoad == null ? null : itemLoad.Previous;
-        if (itemLoad == null ||
-            listLoad == null ||
-            (itemLoad.OpCode != OpCodes.Ldloc_S &&
-             itemLoad.OpCode != OpCodes.Ldloc) ||
-            (listLoad.OpCode != OpCodes.Ldloc_S &&
-             listLoad.OpCode != OpCodes.Ldloc &&
-             listLoad.OpCode != OpCodes.Ldloc_0 &&
-             listLoad.OpCode != OpCodes.Ldloc_1 &&
-             listLoad.OpCode != OpCodes.Ldloc_2 &&
-             listLoad.OpCode != OpCodes.Ldloc_3) ||
-            !(itemLoad.Operand is VariableDefinition))
-        {
-            throw new InvalidOperationException(
-                "Unexpected item-list Add sequence.");
-        }
-
-        var il = finish.Body.GetILProcessor();
-        var addIt = Instruction.Create(OpCodes.Nop);
-        il.InsertBefore(listLoad, Instruction.Create(OpCodes.Ldarg_1));
-        il.InsertBefore(listLoad, Instruction.Create(
-            OpCodes.Ldloc,
-            itemLoad.Operand as VariableDefinition));
-        il.InsertBefore(listLoad, Instruction.Create(
-            OpCodes.Call,
-            ruleMethod));
-        il.InsertBefore(listLoad, Instruction.Create(
-            OpCodes.Brfalse,
-            addIt));
-        il.InsertBefore(listLoad, Instruction.Create(
-            OpCodes.Br,
-            addItem.Next));
-        il.InsertBefore(listLoad, addIt);
-        finish.Body.MaxStackSize = Math.Max(
-            finish.Body.MaxStackSize,
-            3);
+        return method;
     }
 
     private static TypeDefinition RequiredType(
@@ -291,4 +346,5 @@ internal static class NormalStageNoEquipmentDropFix
         }
         return type;
     }
+
 }
